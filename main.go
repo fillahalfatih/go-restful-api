@@ -5,8 +5,7 @@ import (
 	"net/http"
 	"log"
 	"github.com/gorilla/mux"
-	"math/rand"
-	"strconv"
+	"github.com/google/uuid"
 )
 
 // Book Struct (Model)
@@ -51,8 +50,10 @@ func createBook(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var book Book
 	_ = json.NewDecoder(r.Body).Decode(&book)
-	book.Id = strconv.Itoa(rand.Intn(1000000))
+
+	book.Id = uuid.New().String()
 	books = append(books, book)
+
 	json.NewEncoder(w).Encode(book)
 }
 
@@ -62,16 +63,18 @@ func updateBook(w http.ResponseWriter, r *http.Request) {
 	params := mux.Vars(r)
 	for index, item := range books {
 		if item.Id == params["id"] {
-			books = append(books[:index], books[index+1:]...)
-			var book Book
-			_ = json.NewDecoder(r.Body).Decode(&book)
-			book.Id = params["id"]
-			books = append(books, book)
-			json.NewEncoder(w).Encode(book)
+			var updated Book
+			if err := json.NewDecoder(r.Body).Decode(&updated); err != nil {
+				http.Error(w, "Invalid JSON", http.StatusBadRequest)
+				return
+			}
+			updated.Id = params["id"]
+			books[index] = updated
+			json.NewEncoder(w).Encode(updated)
 			return
 		}
 	}
-	json.NewEncoder(w).Encode(books)
+	http.Error(w, "Book not found", http.StatusNotFound)
 }
 
 // Delete a Book
