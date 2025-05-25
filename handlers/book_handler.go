@@ -8,27 +8,30 @@ import (
 	"github.com/google/uuid"
 
 	"go-restful-api/models"
+	"go-restful-api/config"
 )
-
-var Books []models.Book
 
 // Get All Books
 func GetBooks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(Books)
+	var books []models.Book
+	if err := config.DB.Preload("Author").Find(&books).Error; err != nil {
+		http.Error(w, "Failed to retrieve books", http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(books)
 }
 
 // Get Single Book
 func GetBook(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	params := mux.Vars(r)
-	for _, item := range Books {
-		if item.Id == params["id"] {
-			json.NewEncoder(w).Encode(item)
-			return
-		}
+	var book models.Book
+	if err := config.DB.Preload("Author").First(&book, "id = ?", params["id"]).Error; err != nil {
+		http.Error(w, "Book not found", http.StatusNotFound)
+		return
 	}
-	json.NewEncoder(w).Encode(&models.Book{})
+	json.NewEncoder(w).Encode(book)
 }
 
 // Create a New Book
@@ -41,7 +44,10 @@ func CreateBook(w http.ResponseWriter, r *http.Request) {
 	}
 
 	book.Id = uuid.New().String()
-	Books = append(Books, book)
+	if err := config.DB.Create(&book).Error; err != nil {
+		http.Error(w, "Failed to create book", http.StatusInternalServerError)
+		return
+	}
 
 	json.NewEncoder(w).Encode(book)
 }
@@ -50,31 +56,42 @@ func CreateBook(w http.ResponseWriter, r *http.Request) {
 func UpdateBook(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	params := mux.Vars(r)
-	for index, item := range Books {
-		if item.Id == params["id"] {
-			var updated models.Book
-			if err := json.NewDecoder(r.Body).Decode(&updated); err != nil {
-				http.Error(w, "Invalid JSON", http.StatusBadRequest)
-				return
-			}
-			updated.Id = params["id"]
-			Books[index] = updated
-			json.NewEncoder(w).Encode(updated)
-			return
-		}
+	var book models.Book
+
+	if err := config.DB.First(&book, "id = ?", params["id"]).Error; err != nil {
+		http.Error(w, "Book not found", http.StatusNotFound)
+		return
 	}
-	http.Error(w, "Book not found", http.StatusNotFound)
+
+	if err := json.NewDecoder(r.Body).Decode(&book); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	// GORM akan update berdasarkan primary key yang ditemukan tadi
+	if err := config.DB.Save(&book).Error; err != nil {
+		http.Error(w, "Failed to update book", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(book)
 }
 
 // Delete a Book
 func DeleteBook(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	params := mux.Vars(r)
-	for index, item := range Books {
-		if item.Id == params["id"] {
-			Books = append(Books[:index], Books[index+1:]...)
-			break
-		}
+	var book models.Book
+
+	if err := config.DB.First(&book, "id = ?", params["id"]).Error; err != nil {
+		http.Error(w, "Book not found", http.StatusNotFound)
+		return
 	}
-	json.NewEncoder(w).Encode(Books)
+
+	if err := config.DB.Delete(&book).Error; err != nil {
+		http.Error(w, "Failed to delete book", http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{"message": "Book deleted"})
 }
